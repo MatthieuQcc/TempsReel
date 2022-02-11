@@ -71,6 +71,10 @@ void Tasks::Init() {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    if (err = rt_mutex_create(&mutex_robotWithWD, NULL)) {
+        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     if (err = rt_mutex_create(&mutex_move, NULL)) {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
@@ -257,6 +261,7 @@ void Tasks::SendToMonTask(void* arg) {
 void Tasks::ReceiveFromMonTask(void *arg) {
     Message *msgRcv;
     
+    
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
@@ -277,6 +282,14 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
             rt_sem_v(&sem_openComRobot);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
+            rt_mutex_acquire(&mutex_robotWithWD, TM_INFINITE);
+            WithWD = 0;
+            rt_mutex_release(&mutex_robotWithWD);
+            rt_sem_v(&sem_startRobot);
+        } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)) {
+            rt_mutex_acquire(&mutex_robotWithWD, TM_INFINITE);
+            WithWD = 1;
+            rt_mutex_release(&mutex_robotWithWD);
             rt_sem_v(&sem_startRobot);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
@@ -332,7 +345,7 @@ void Tasks::StartRobotTask(void *arg) {
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
-    
+    int StartWithWD;
     /**************************************************************************************/
     /* The task startRobot starts here                                                    */
     /**************************************************************************************/
@@ -340,13 +353,27 @@ void Tasks::StartRobotTask(void *arg) {
 
         Message * msgSend;
         rt_sem_p(&sem_startRobot, TM_INFINITE);
-        cout << "Start robot without watchdog (";
-        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-        msgSend = robot.Write(robot.StartWithoutWD());
-        rt_mutex_release(&mutex_robot);
-        cout << msgSend->GetID();
+        
+        rt_mutex_acquire(&mutex_robotWithWD, TM_INFINITE);
+        StartWithWD = WithWD;
+        rt_mutex_release(&mutex_robotWithWD);
+        
+        if (StartWithWD==0) {
+            cout << "Start robot without watchdog (";
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+            msgSend = robot.Write(robot.StartWithoutWD());
+            rt_mutex_release(&mutex_robot);
+            
+        } 
+        else {
+            cout << "Start robot with watchdog (";
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+            msgSend = robot.Write(robot.StartWithWD());
+            rt_mutex_release(&mutex_robot);
+                       
+        }
+        cout << msgSend->GetID(); 
         cout << ")" << endl;
-
         cout << "Movement answer: " << msgSend->ToString() << endl << flush;
         WriteInQueue(&q_messageToMon, msgSend);  // msgSend will be deleted by sendToMon
 
@@ -432,9 +459,11 @@ void Tasks::CheckBattery() {
         }
         rt_mutex_release(&mutex_robotStarted);
         cout << endl << flush;
-    }
-       
+    }    
+
 }
+
+
 
 
 /**
