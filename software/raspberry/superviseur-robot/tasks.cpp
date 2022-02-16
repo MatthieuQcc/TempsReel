@@ -196,6 +196,16 @@ void Tasks::Stop() {
 }
 
 /**
+ * @brief Reset
+ */
+void Tasks::Reset() {
+    Stop();
+    Init();
+    Run();
+    Join();
+}
+
+/**
  */
 void Tasks::Join() {
     cout << "Tasks synchronized" << endl << flush;
