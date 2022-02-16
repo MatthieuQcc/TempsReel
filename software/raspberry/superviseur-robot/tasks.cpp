@@ -26,8 +26,9 @@
 #define PRIORITY_TRECEIVEFROMMON 25
 #define PRIORITY_TSTARTROBOT 20
 #define PRIORITY_TCAMERA 21
-
 #define PRIORITY_TBATTERY 20
+#define PRIORITY_TCLOSECOMROBOT 17
+
 
 /*
  * Some remarks:
@@ -89,6 +90,10 @@ void Tasks::Init() {
         exit(EXIT_FAILURE);
     }
     if (err = rt_sem_create(&sem_openComRobot, NULL, 0, S_FIFO)) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_sem_create(&sem_closeComRobot, NULL, 0, S_FIFO)) {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -277,10 +282,18 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
 
         if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) {
+            cout << "Communication with monitor lost" << endl << flush;
+            //WriteInQueue(&q_messageComRobot, new Message(MESSAGE_ROBOT_COM_CLOSE));
+            //rt_sem_v(&sem_closeComRobot);
             delete(msgRcv);
+            break;
+        }else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_CLOSE)) {
+            cout << "Communication closed" << endl << flush;
+            rt_sem_v(&sem_closeComRobot);
+            //delete(msgRcv);
             exit(-1);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
-            rt_sem_v(&sem_openComRobot);
+            rt_sem_v(&sem_openComRobot);            
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
             rt_mutex_acquire(&mutex_robotWithWD, TM_INFINITE);
             WithWD = 0;
@@ -301,7 +314,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             move = msgRcv->GetID();
             rt_mutex_release(&mutex_move);
         }
-        delete(msgRcv); // mus be deleted manually, no consumer
+        delete(msgRcv); // must be deleted manually, no consumer
     }
 }
 
@@ -337,6 +350,7 @@ void Tasks::OpenComRobot(void *arg) {
         WriteInQueue(&q_messageToMon, msgSend); // msgSend will be deleted by sendToMon
     }
 }
+
 
 /**
  * @brief Thread starting the communication with the robot.

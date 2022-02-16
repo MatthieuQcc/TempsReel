@@ -93,8 +93,10 @@ private:
     /**********************************************************************/
     RT_SEM sem_barrier;
     RT_SEM sem_openComRobot;
+    RT_SEM sem_closeComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
+    
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -124,6 +126,7 @@ private:
      * @brief Thread opening communication with the robot.
      */
     void OpenComRobot(void *arg);
+    
 
     /**
      * @brief Thread starting the communication with the robot.
