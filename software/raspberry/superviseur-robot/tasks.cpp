@@ -93,15 +93,19 @@ void Tasks::Init() {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_sem_create(&sem_closeComRobot, NULL, 0, S_FIFO)) {
+    /*if (err = rt_sem_create(&sem_closeComRobot, NULL, 0, S_FIFO)) {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
-    }
+    }*/
     if (err = rt_sem_create(&sem_serverOk, NULL, 0, S_FIFO)) {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
     if (err = rt_sem_create(&sem_startRobot, NULL, 0, S_FIFO)) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_sem_create(&sem_reset, NULL, 0, S_FIFO)) {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -134,10 +138,14 @@ void Tasks::Init() {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_task_create(&th_battery, "th_battery", 0, PRIORITY_TBATTERY, 0)) {
+    if (err = rt_task_create(&th_battery, "th_reset", 0, PRIORITY_TBATTERY, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
-    }    
+    }  
+    if (err = rt_task_create(&th_reset, "th_battery", 0, PRIORITY_TBATTERY, 0)) {
+        cerr << "Error task create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    } 
     
     
     cout << "Tasks created successfully" << endl << flush;
@@ -284,26 +292,33 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) {
             cout << "Communication with monitor lost" << endl << flush;
             //WriteInQueue(&q_messageComRobot, new Message(MESSAGE_ROBOT_COM_CLOSE));
-            //rt_sem_v(&sem_closeComRobot);
+            rt_sem_v(&sem_closeComRobot);
             delete(msgRcv);
             break;
+        
         }else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_CLOSE)) {
             cout << "Communication closed" << endl << flush;
             rt_sem_v(&sem_closeComRobot);
             //delete(msgRcv);
             exit(-1);
+        }else if (msgRcv->CompareID(MESSAGE_ROBOT_RESET)){
+            cout << "Reset of the robot" << endl << flush;
+            rt_sem_v(&sem_startRobot);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
             rt_sem_v(&sem_openComRobot);            
+        
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
             rt_mutex_acquire(&mutex_robotWithWD, TM_INFINITE);
             WithWD = 0;
             rt_mutex_release(&mutex_robotWithWD);
             rt_sem_v(&sem_startRobot);
+        
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)) {
             rt_mutex_acquire(&mutex_robotWithWD, TM_INFINITE);
             WithWD = 1;
             rt_mutex_release(&mutex_robotWithWD);
             rt_sem_v(&sem_startRobot);
+        
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_LEFT) ||
@@ -314,6 +329,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             move = msgRcv->GetID();
             rt_mutex_release(&mutex_move);
         }
+        
         delete(msgRcv); // must be deleted manually, no consumer
     }
 }
@@ -417,7 +433,7 @@ void Tasks::MoveTask(void *arg) {
 
     while (1) {
         rt_task_wait_period(NULL);
-        cout << "Periodic movement update";
+        cout << "Periodic movement update" << endl << flush;
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
         rs = robotStarted;
         rt_mutex_release(&mutex_robotStarted);
@@ -463,7 +479,7 @@ void Tasks::CheckBattery() {
     
     while (1) {
         rt_task_wait_period(NULL);
-        cout << "Battery Periodic" << endl << flush;
+        cout << "Battery Periodic" << endl;
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
         if (robotStarted==1) {
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
@@ -475,6 +491,42 @@ void Tasks::CheckBattery() {
         cout << endl << flush;
     }    
 
+}
+
+void Tasks::Reset() {
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+    /**************************************************************************************/
+    /* The task startRobot starts here                                                    */
+    /**************************************************************************************/
+    while (1) {
+
+        Message * msgSend;
+        
+        rt_sem_p(&sem_startRobot, TM_INFINITE);
+        
+        rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+        robotStarted = 0;
+        rt_mutex_release(&mutex_robotStarted);
+        
+        rt_task_sleep(100000000);
+        
+        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+        msgSend = robot.Write(robot.Reset());
+        rt_mutex_release(&mutex_robot);
+        
+        rt_mutex_acquire(&mutex_move, TM_INFINITE);
+        move = MESSAGE_ROBOT_STOP;
+        rt_mutex_release(&mutex_move);
+
+        cout << msgSend->GetID(); 
+        cout << ")" << endl;
+        
+        WriteInQueue(&q_messageToMon, msgSend);  // msgSend will be deleted by sendToMon
+
+        
+    }
 }
 
 
