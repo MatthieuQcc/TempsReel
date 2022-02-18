@@ -53,6 +53,7 @@ public:
      */
     void Stop();
     
+    
     /**
      * @brief Suspends main thread
      */
@@ -78,6 +79,7 @@ private:
     RT_TASK th_startRobot;
     RT_TASK th_move;
     RT_TASK th_battery;
+    RT_TASK th_reset;
     
     /**********************************************************************/
     /* Mutex                                                              */
@@ -152,7 +154,10 @@ private:
     void CheckBattery();  
 
     
-    
+    /**
+     * @brief Reset robot
+     */
+    void Reset();
     
     /**
      * Read a message from a given queue, block if empty

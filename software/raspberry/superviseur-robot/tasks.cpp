@@ -28,6 +28,7 @@
 #define PRIORITY_TCAMERA 21
 
 #define PRIORITY_TBATTERY 20
+#define PRIORITY_TRESET 20
 
 /*
  * Some remarks:
@@ -58,7 +59,7 @@ void Tasks::Init() {
 
     /**************************************************************************************/
     /* 	Mutex creation                                                                    */
-    /**************************************************************************************/
+    /*************************th_battery*************************************************************/
     if (err = rt_mutex_create(&mutex_monitor, NULL)) {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
@@ -133,7 +134,10 @@ void Tasks::Init() {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }    
-    
+    if (err = rt_task_create(&th_reset, "th_reset", 0, PRIORITY_TRESET, 0)) {
+        cerr << "Error task create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     
     cout << "Tasks created successfully" << endl << flush;
 
@@ -183,6 +187,10 @@ void Tasks::Run() {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    if (err = rt_task_start(&th_reset, (void(*)(void*)) & Tasks::Reset, this)) {
+        cerr << "Error task start: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
 
     cout << "Tasks launched" << endl << flush;
 }
@@ -195,15 +203,7 @@ void Tasks::Stop() {
     robot.Close();
 }
 
-/**
- * @brief Reset
- */
-void Tasks::Reset() {
-    Stop();
-    Init();
-    Run();
-    Join();
-}
+
 
 /**
  */
@@ -473,7 +473,17 @@ void Tasks::CheckBattery() {
 
 }
 
-
+/**
+ * @brief Reset
+ */
+void Tasks::Reset() {
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    if (robotStarted==1) {
+            robot.Write(new Message(MESSAGE_ROBOT_RESET));
+            Stop();
+            cout << "Reset du robot" <<  endl << flush;
+        }
+}
 
 
 /**
